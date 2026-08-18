@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>V2V 6G Sweep-Line Allocation — Interactive Architecture</title>
+<style>
+  :root {
+    --ground: #0B1520; --panel: #101E2E; --panel-2: #0D1926;
+    --ink: #EDF2F7; --muted: #8FA3B8; --faint: #54677D;
+    --oxygen: #2FB8A6; --oxygen-bg: #0E2A26;
+    --alert: #E8583D; --alert-bg: #2E1712;
+    --warn: #E8A23D; --warn-bg: #2E2110;
+    --cool: #5B8DEF; --cool-bg: #16223B;
+    --purple: #9B7FE8; --purple-bg: #211A38;
+    --line: rgba(143,163,184,0.16); --line-strong: rgba(143,163,184,0.30);
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.35);
+    --font-display: "IBM Plex Sans", "Segoe UI", sans-serif;
+    --font-body: "IBM Plex Sans", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+    --font-mono: "IBM Plex Mono", "Cascadia Code", "Consolas", ui-monospace, monospace;
+  }
+  :root[data-theme="light"] {
+    --ground: #F4F3EE; --panel: #FFFFFF; --panel-2: #FAF9F5;
+    --ink: #191D24; --muted: #5A6473; --faint: #8A93A2;
+    --oxygen: #1F9E88; --oxygen-bg: #E6F6F1;
+    --alert: #C8362A; --alert-bg: #FBE7E4;
+    --warn: #B9860F; --warn-bg: #FBF2DF;
+    --cool: #4A6FC0; --cool-bg: #EAF0FB;
+    --purple: #8261CC; --purple-bg: #F1ECFB;
+    --line: #E2E0D7; --line-strong: #CBC9BE;
+    --shadow: 0 1px 2px rgba(24,28,36,.05), 0 8px 24px rgba(24,28,36,.06);
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --ground: #F4F3EE; --panel: #FFFFFF; --panel-2: #FAF9F5;
+      --ink: #191D24; --muted: #5A6473; --faint: #8A93A2;
+      --oxygen: #1F9E88; --oxygen-bg: #E6F6F1;
+      --alert: #C8362A; --alert-bg: #FBE7E4;
+      --warn: #B9860F; --warn-bg: #FBF2DF;
+      --cool: #4A6FC0; --cool-bg: #EAF0FB;
+      --purple: #8261CC; --purple-bg: #F1ECFB;
+      --line: #E2E0D7; --line-strong: #CBC9BE;
+      --shadow: 0 1px 2px rgba(24,28,36,.05), 0 8px 24px rgba(24,28,36,.06);
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { background: var(--ground); color: var(--ink); font-family: var(--font-body); line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  a { color: inherit; }
+  .topbar { position: sticky; top: 0; z-index: 50; display: flex; align-items: center; gap: 16px; padding: 14px 26px;
+    background: color-mix(in srgb, var(--ground) 86%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .brand { display: flex; align-items: baseline; gap: 10px; cursor: pointer; user-select: none; }
+  .brand .logo { font-family: var(--font-display); font-weight: 700; font-size: 20px; letter-spacing: 0.3px; line-height: 1; position: relative; }
+  .brand .logo::after { content: ""; position: absolute; left: 0; right: 0; bottom: -4px; height: 3px; background: var(--purple); border-radius: 2px; }
+  .brand .kicker { font-size: 11px; text-transform: uppercase; letter-spacing: 2px; color: var(--faint); font-weight: 600; }
+  .crumbs { flex: 1; font-size: 13px; color: var(--muted); min-width: 160px; }
+  .crumbs b { color: var(--ink); font-weight: 600; }
+  .topbtn { border: 1px solid var(--line-strong); background: var(--panel); color: var(--muted); border-radius: 8px; padding: 7px 12px;
+    font-size: 12.5px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; }
+  .topbtn:hover { color: var(--ink); border-color: var(--purple); }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 32px 26px 100px; }
+  .hero { padding: 26px 0 8px; }
+  .hero h1 { font-family: var(--font-display); font-weight: 700; letter-spacing: -0.5px; font-size: clamp(32px, 5.5vw, 52px); line-height: 1.04; margin: 0 0 10px; text-wrap: balance; }
+  .hero h1 .rd { color: var(--purple); }
+  .hero p.lede { font-size: 16px; color: var(--muted); max-width: 72ch; margin: 0; }
+  .hint { margin-top: 18px; font-size: 13px; color: var(--faint); display: inline-flex; align-items: center; gap: 8px; }
+  .hint .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--purple); animation: pulse 1.8s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:.35; transform:scale(.8)} 50%{opacity:1; transform:scale(1.15)} }
+  .disclaimer { margin-top: 16px; padding: 10px 14px; background: var(--warn-bg); border: 1px solid var(--warn); border-radius: 8px; font-size: 12.5px; color: var(--warn); }
+  .navtabs { display: flex; gap: 8px; margin: 24px 0 4px; flex-wrap: wrap; border-bottom: 1px solid var(--line); }
+  .navtab { border: none; background: none; color: var(--muted); font-family: inherit; font-size: 13.5px; font-weight: 600; padding: 10px 6px; cursor: pointer; border-bottom: 2px solid transparent; }
+  .navtab:hover { color: var(--ink); }
+  .navtab.active { color: var(--purple); border-bottom-color: var(--purple); }
+  .tabpage { display: none; }
+  .tabpage.active { display: block; animation: fade .25s ease; }
+  @keyframes fade { from { opacity: 0; transform: translateY(6px);} to {opacity:1; transform:none;} }
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 22px 0 8px; }
+  .legend .li { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); }
+  .legend .sw { width: 12px; height: 12px; border-radius: 3px; }
+  .layer { margin-top: 22px; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); box-shadow: var(--shadow); overflow: hidden; }
+  .layer-head { display: flex; align-items: center; gap: 12px; padding: 13px 18px; border-bottom: 1px solid var(--line); background: var(--lbg, var(--panel-2)); flex-wrap: wrap; }
+  .layer-tag { font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: #fff; background: var(--lc, var(--purple)); padding: 3px 8px; border-radius: 6px; letter-spacing: .5px; }
+  .layer-name { font-weight: 700; font-size: 15px; }
+  .layer-role { color: var(--muted); font-size: 13px; margin-left: auto; text-align: right; }
+  .comp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; padding: 16px; }
+  .comp { text-align: left; cursor: pointer; border: 1px solid var(--line); border-left: 3px solid var(--lc, var(--purple)); background: var(--panel-2);
+    border-radius: 11px; padding: 13px 14px; display: flex; flex-direction: column; gap: 5px; transition: transform .13s ease, box-shadow .13s ease, border-color .13s; font-family: inherit; }
+  .comp:hover { transform: translateY(-3px); box-shadow: var(--shadow); border-color: var(--lc); }
+  .comp .ic { font-size: 18px; }
+  .comp .cn { font-weight: 700; font-size: 14px; }
+  .comp .ct { font-size: 12px; color: var(--muted); line-height: 1.4; }
+  .comp .tool { margin-top: 4px; font-family: var(--font-mono); font-size: 10.5px; color: var(--lc, var(--purple)); font-weight: 600; letter-spacing: .3px; }
+  .detail { display: none; }
+  .detail.active { display: block; animation: fade .25s ease; }
+  .map.hidden { display: none; }
+  .back { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; background: none; border: none; color: var(--muted); font-weight: 600; font-size: 13.5px; padding: 4px 0; margin-bottom: 6px; font-family: inherit; }
+  .back:hover { color: var(--purple); }
+  .dhead { display: flex; align-items: flex-start; gap: 16px; margin: 6px 0 8px; flex-wrap: wrap; }
+  .dhead .dic { width: 58px; height: 58px; flex: none; border-radius: 14px; display: grid; place-items: center; font-size: 28px; background: var(--lbg); border: 1px solid var(--lc); }
+  .dhead h2 { font-family: var(--font-display); font-weight: 700; letter-spacing: -0.3px; font-size: clamp(26px, 4vw, 38px); margin: 2px 0 4px; line-height: 1.05; }
+  .dhead .dsub { color: var(--muted); font-size: 15px; max-width: 60ch; }
+  .dhead .dtool { display: inline-block; margin-top: 8px; font-family: var(--font-mono); font-size: 12px; color: #fff; background: var(--lc); padding: 3px 9px; border-radius: 6px; }
+  .dcols { display: grid; grid-template-columns: 1fr; gap: 22px; margin-top: 22px; }
+  @media (min-width: 860px) { .dcols { grid-template-columns: 1.05fr .95fr; } }
+  .card { border: 1px solid var(--line); border-radius: 14px; background: var(--panel); box-shadow: var(--shadow); padding: 20px 22px; margin-bottom: 18px; }
+  .card h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 1.4px; color: var(--faint); margin: 0 0 12px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+  .card h3::before { content: ""; width: 14px; height: 2px; background: var(--lc, var(--purple)); }
+  .card p { margin: 0 0 12px; font-size: 14.5px; color: var(--ink); }
+  .card p:last-child { margin-bottom: 0; }
+  .card .q { color: var(--muted); font-size: 14px; }
+  .card strong { color: var(--ink); }
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 13.5px; }
+  .kv dt { color: var(--faint); font-weight: 600; font-family: var(--font-mono); font-size: 12px; }
+  .kv dd { margin: 0; color: var(--ink); }
+  code, .mono { font-family: var(--font-mono); font-size: 12.5px; background: var(--panel-2); padding: 1.5px 6px; border-radius: 5px; border: 1px solid var(--line); }
+  .figure { border: 1px solid var(--line); border-radius: 14px; background: var(--panel); box-shadow: var(--shadow); padding: 16px; }
+  @media (min-width: 860px) { .figure { position: sticky; top: 78px; max-height: calc(100vh - 94px); overflow-y: auto; } }
+  .figure .ftitle { font-size: 12px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--faint); font-weight: 700; margin-bottom: 4px; }
+  .figure .fnote { font-size: 12.5px; color: var(--muted); min-height: 34px; margin-top: 10px; }
+  .related { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+  .chip { cursor: pointer; font-family: inherit; font-size: 12.5px; font-weight: 600; border: 1px solid var(--line-strong); background: var(--panel-2); color: var(--muted); padding: 6px 11px; border-radius: 20px; }
+  .chip:hover { color: var(--purple); border-color: var(--purple); }
+  .ds-section { margin-top: 24px; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); box-shadow: var(--shadow); padding: 24px 26px; }
+  .ds-section h2 { font-family: var(--font-display); font-size: 24px; margin: 0 0 6px; }
+  .ds-section .subtitle { color: var(--muted); font-size: 14px; margin-bottom: 18px; max-width: 80ch; }
+  .ds-section h3 { font-size: 16px; margin: 26px 0 10px; color: var(--ink); }
+  .ds-section h3:first-of-type { margin-top: 6px; }
+  .table-wrap { overflow-x: auto; margin: 12px 0 20px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+  th, td { text-align: left; padding: 9px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--faint); font-weight: 700; border-bottom: 1px solid var(--line-strong); }
+  td.mono, th.mono { font-family: var(--font-mono); font-size: 12.5px; }
+  tr.bugrow td { background: var(--alert-bg); }
+  tr.fixrow td { background: var(--oxygen-bg); }
+  .callout { margin: 16px 0; padding: 14px 18px; border-radius: 10px; border-left: 3px solid var(--warn); background: var(--warn-bg); font-size: 13.5px; color: var(--ink); }
+  .callout.bug { border-left-color: var(--alert); background: var(--alert-bg); }
+  .callout.fix { border-left-color: var(--oxygen); background: var(--oxygen-bg); }
+  .callout.decision { border-left-color: var(--cool); background: var(--cool-bg); }
+  .callout b { display: block; margin-bottom: 4px; font-size: 12px; text-transform: uppercase; letter-spacing: .8px; }
+  .dfd-flow { display: flex; flex-direction: column; align-items: stretch; gap: 2px; margin: 20px 0; }
+  .dfd-stage { display: flex; gap: 14px; align-items: flex-start; padding: 14px 16px; border-radius: 12px; border: 1px solid var(--line); border-left: 4px solid var(--sc, var(--muted)); background: var(--panel-2); }
+  .dfd-num { flex: 0 0 auto; width: 30px; height: 30px; border-radius: 50%; background: var(--sc, var(--muted)); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; }
+  .dfd-body h4 { margin: 0 0 4px; font-size: 14.5px; display: flex; align-items: center; gap: 8px; }
+  .dfd-body p { margin: 3px 0; font-size: 13px; color: var(--muted); }
+  .dfd-body p b { color: var(--ink); }
+  .dfd-arrow { text-align: center; color: var(--faint); font-size: 16px; line-height: 1.2; }
+  .glossary-search { width: 100%; max-width: 420px; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--line-strong);
+    background: var(--panel-2); color: var(--ink); font-family: inherit; font-size: 14px; margin-bottom: 18px; }
+  .glossary-search:focus { outline: none; border-color: var(--purple); }
+  .gloss-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+  .gloss-card { border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2); padding: 15px 17px; }
+  .gloss-card h4 { margin: 0 0 6px; font-size: 14.5px; color: var(--purple); display: flex; align-items: center; gap: 8px; }
+  .gloss-card .cat { font-size: 9.5px; text-transform: uppercase; letter-spacing: .6px; color: var(--faint); background: var(--panel); border: 1px solid var(--line); padding: 2px 6px; border-radius: 20px; }
+  .gloss-card p { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.5; }
+  .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--line); color: var(--faint); font-size: 12.5px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; } }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="brand" onclick="showMap()">
+    <span class="logo">🚗 V2V-6G</span>
+    <span class="kicker">Architecture Explorer</span>
+  </div>
+  <div class="crumbs" id="crumbs"><b>System map</b> — click any component</div>
+  <button class="topbtn" id="themeBtn" onclick="toggleTheme()">◐ Theme</button>
+</div>
+
+<div class="wrap map" id="mapView">
+  <div class="hero">
+    <h1>How the <span class="rd">V2V 6G Sweep-Line Allocator</span> is built</h1>
+    <p class="lede">A highway V2V simulation: a sweep-line algorithm finds nearby vehicle pairs,
+      mmWave/THz path-loss models score each link, a greedy allocator assigns 12 channels to
+      maximize SINR, and a small Random Forest model predicts throughput — plus an animated
+      visualization whose "live" numbers are honestly illustrative, not a live re-run of the
+      real algorithm. Every box below is clickable.</p>
+    <div class="hint"><span class="dot"></span> Tap a component to open a full explainer.</div>
+    <div class="disclaimer">⚠ Computer Networks coursework simulation (VIT Vellore). Adapts its naming/approach from a real published paper (Mande &amp; Ramachandran, 2025) — see the Dataset &amp; Decisions tab for how this repo's code relates to both that paper and the submitted report.</div>
+  </div>
+
+  <div class="navtabs" id="navtabs">
+    <button class="navtab active" data-tab="components" onclick="switchTab('components')">Components</button>
+    <button class="navtab" data-tab="dataset" onclick="switchTab('dataset')">Dataset &amp; Decisions</button>
+    <button class="navtab" data-tab="metrics" onclick="switchTab('metrics')">Metrics &amp; Results</button>
+    <button class="navtab" data-tab="dataflow" onclick="switchTab('dataflow')">Data Flow</button>
+    <button class="navtab" data-tab="glossary" onclick="switchTab('glossary')">Glossary</button>
+  </div>
+
+  <div class="tabpage active" id="tab-components">
+    <div class="legend" id="legend"></div>
+    <div id="layers"></div>
+  </div>
+  <div class="tabpage" id="tab-dataset"></div>
+  <div class="tabpage" id="tab-metrics"></div>
+  <div class="tabpage" id="tab-dataflow"></div>
+  <div class="tabpage" id="tab-glossary"></div>
+
+  <div class="footer">
+    <span>V2V 6G Sweep-Line Resource Allocation — sweep-line + greedy SINR + Edge-AI throughput prediction.</span>
+    <span>Interactive companion to <code>README.md</code></span>
+  </div>
+</div>
+
+<div class="wrap detail" id="detailView"></div>
+
+<script>
+const LAYERS = [
+  { id:"l1", tag:"L1", name:"Setup", role:"Parameters, path-loss models, band selection", comps:["params","pathloss","bandsel"] },
+  { id:"l2", tag:"L2", name:"Core Simulation", role:"Mobility, sweep-line, greedy SINR allocation", comps:["vehicles","sweepline","greedy","staticplots"] },
+  { id:"l3", tag:"L3", name:"Animation", role:"Visualization — illustrative, not a live re-run", comps:["animation"] },
+  { id:"l4", tag:"L4", name:"Edge-AI", role:"Throughput prediction + network summary metrics", comps:["edgeai","fairness"] },
+];
+
+const C = {
+  params: {
+    ic:"⚙️", name:"Simulation Parameters", layer:"l1", tool:"Part 1",
+    sub:"40 vehicles, 3 lanes, 2km road, 12 channels, 250m range.",
+    what:"Global constants defining the simulated world: <code>NUM_VEHICLES=40</code>, <code>LANES=3</code>, <code>ROAD_LENGTH=2000</code>m, <code>NUM_CHANNELS=12</code>, communication range <code>d_max=250</code>m, plus radio parameters (23 dBm Tx power, -174 dBm/Hz noise floor, 1 MHz per channel).",
+    how:"Speeds are drawn uniformly between 18-38 m/s (roughly 65-135 km/h), consistent with a highway setting. All constants are declared once at the top of Part 1 so every later stage references the same shared configuration.",
+    role_:"Every other component in the simulation is parameterized from these values — changing <code>NUM_VEHICLES</code> or <code>NUM_CHANNELS</code> here cascades through vehicle generation, sweep-line range checks, and channel allocation without touching their code.",
+    why:"These are this project's own parameters — notably different from the submitted report's claimed setup (100-300 vehicles, 2 lanes, 10 channels), see the Dataset &amp; Decisions tab.",
+    fig:"paramfig", related:["vehicles","sweepline"],
+    kv:{ "Vehicles":"40", "Lanes":"3", "Road length":"2000m", "Channels":"12", "Comm. range":"250m", "Tx power":"23 dBm" }
+  },
+  pathloss: {
+    ic:"📡", name:"mmWave & THz Path-Loss Models", layer:"l1", tool:"path_loss_mmwave(), path_loss_thz()",
+    sub:"Two physics-based signal-loss formulas for next-gen 6G frequency bands.",
+    what:"<code>path_loss_mmwave(d)</code> implements a 3GPP-style path-loss formula for 60 GHz: <code>32.4 + 21·log10(d) + 20·log10(f_GHz)</code>. <code>path_loss_thz(d)</code> implements 140 GHz free-space spreading loss plus a linear atmospheric absorption term (<code>0.05·d</code>).",
+    how:"Both take a distance in meters and return path loss in dB — the signal strength lost between transmitter and receiver purely from distance and frequency, before any interference is considered. THz's much higher frequency means dramatically higher spreading loss at the same distance, but the model also captures atmospheric absorption as a THz-specific extra penalty that grows linearly with distance.",
+    role_:"Both feed directly into <code>select_best_band()</code>, which is called for every candidate link during greedy allocation to decide which of the two bands to use.",
+    why:"Modeling two distinct 6G-candidate bands (rather than a single generic channel model) is what lets the adaptive band-selection logic actually have a real physical basis for its decisions.",
+    fig:"pathlossfig", related:["bandsel","greedy"],
+    kv:{ "mmWave freq":"60 GHz", "THz freq":"140 GHz", "mmWave model":"3GPP-style: 32.4+21log10(d)+20log10(f)", "THz model":"free-space spreading + 0.05·d absorption" }
+  },
+  bandsel: {
+    ic:"🔀", name:"Adaptive Band Selection", layer:"l1", tool:"select_best_band(distance)",
+    sub:"Per-link: pick whichever of mmWave/THz gives higher received power.",
+    what:"For a given link distance, computes path loss under both band models, converts each to a received power estimate, and returns whichever band ('THz' or 'mmWave') would deliver higher received signal power at the receiver.",
+    how:"There are two versions of this function across Part 1 and Part 2 — Part 1's version compares SNR-like ratios directly in watts; Part 2 explicitly redefines it (comment: <code>&quot;Override / correct select_best_band to use dB properly&quot;</code>) to work correctly in the dB domain before converting to watts — a real, visible in-notebook correction mid-project.",
+    role_:"Called once per candidate link during greedy allocation (<code>estimate_link_rate</code>) and again during actual channel-by-channel SINR computation, so the same band decision logic drives both the initial link-rate ranking and the final allocation.",
+    why:"This function's redefinition partway through the notebook is a genuine, visible bug-fix in the analysis object itself — an example of iterative correctness-checking during development, not a fabricated narrative.",
+    fig:"bandfig", related:["pathloss","greedy"],
+    kv:{ "Decision rule":"higher received power wins", "Redefined":"once, mid-notebook, to fix dB-domain math", "Called by":"estimate_link_rate(), per-channel SINR calc" }
+  },
+
+  vehicles: {
+    ic:"🚙", name:"Vehicle Mobility Model", layer:"l2", tool:"class Vehicle, Part 2",
+    sub:"40 vehicles with position, lane, speed, and a random transmit role.",
+    what:"Each <code>Vehicle</code> has a longitudinal position (<code>x</code>), a lane (0-2), a lateral position derived from lane, a speed, and a 60% random chance of being a transmitter (<code>self.tx</code>).",
+    how:"<code>step(dt)</code> applies small random Gaussian acceleration (mean 0, std 0.5 m/s²), clamps speed to [18,38] m/s, advances position, and wraps around past the road's 2000m end back to 0 — modeling a continuous loop of traffic rather than vehicles disappearing off one end.",
+    role_:"Seeded with <code>np.random.seed(42)</code>/<code>random.seed(42)</code> for reproducibility, then advanced 5 timesteps before the first sweep-line pass so vehicles start already spread out with some realistic variation rather than in their exact initial random positions.",
+    why:"The 60% transmitter split matters directly for link discovery: only vehicle pairs where at least one side is a transmitter are considered as potential V2V links in the sweep-line stage.",
+    fig:"vehfig", related:["sweepline","params"],
+    kv:{ "Class":"Vehicle", "Speed range":"18-38 m/s (~65-135 km/h)", "Transmitter probability":"60%", "Seed":"42 (reproducible)" }
+  },
+  sweepline: {
+    ic:"📐", name:"Sweep-Line Link Discovery", layer:"l2", tool:"sweep_line_find_links()",
+    sub:"A computational-geometry technique applied to V2V proximity detection.",
+    what:"Finds every pair of vehicles within 250m of each other (where at least one is a transmitter), without checking all 40×39 possible pairs individually.",
+    how:"Sorts all vehicles by <code>x</code> position, then sweeps left to right maintaining an 'active window' — as the sweep reaches vehicle <code>i</code>, it first evicts any vehicle from the window whose <code>x</code> distance already exceeds <code>d_max</code> (250m), then checks only the remaining active vehicles as candidates, rather than every vehicle in the simulation. Distance itself is computed as full 2D Euclidean distance (accounting for both along-road and cross-lane separation), with wrap-around handled by taking the shorter of the direct and around-the-loop distances.",
+    role_:"Produces <code>potential_links</code> — the candidate pool that <code>estimate_link_rate()</code> and the greedy allocator work from. On the recorded run: 132 potential pairs found among 40 vehicles.",
+    why:"This is the project's core computational-geometry contribution: a naive check would be O(n²) (1,560 pairs for 40 vehicles); the sweep-line's active-window pruning keeps the per-vehicle work proportional to how many other vehicles are actually nearby, not the total vehicle count.",
+    fig:"sweepfig", related:["vehicles","greedy"],
+    kv:{ "Technique":"sorted sweep + active window", "Comm. range":"250m", "Recorded result":"132 potential pairs / 40 vehicles", "Distance metric":"2D Euclidean, wrap-around aware" }
+  },
+  greedy: {
+    ic:"🎯", name:"Greedy SINR Channel Allocation", layer:"l2", tool:"Part 2, main allocation loop",
+    sub:"183 links allocated across 12 channels, ranked by estimated rate, assigned to minimize interference.",
+    what:"Converts the sweep-line's undirected proximity pairs into directed transmitter→receiver links (skipping pairs with no transmitter, splitting pairs where both sides transmit into two links), estimates each link's achievable rate via Shannon capacity, sorts links by descending estimated rate, then greedily assigns each link to whichever of the 12 channels currently gives it the highest SINR once existing allocations' interference is accounted for.",
+    how:"For each channel, interference is computed as the sum of received power at the current link's receiver from every other transmitter already assigned to that same channel — so channel choice is genuinely interference-aware, not just first-available. Because links are processed highest-estimated-rate first, the strongest links get first pick of the least-congested channels.",
+    role_:"Produces the final <code>channels</code> assignment and per-link metrics (SINR, throughput) that feed both the static plots and the Part 4 Edge-AI training data.",
+    why:"183 allocated links, 417.32 Mbps total system throughput, 0.89 dB average SINR on the recorded run — a low average SINR reflecting that with 12 channels shared across many transmitters, meaningful co-channel interference remains even after greedy optimization.",
+    fig:"greedyfig", related:["sweepline","bandsel","staticplots"],
+    kv:{ "Channels":"12", "Allocated links":"183", "Total throughput":"417.32 Mbps", "Avg SINR":"0.89 dB", "Policy":"greedy, highest-estimated-rate first" }
+  },
+  staticplots: {
+    ic:"📊", name:"Static Diagnostic Plots", layer:"l2", tool:"Part 2, matplotlib",
+    sub:"Top-down highway snapshot, channel utilization, SINR/throughput histograms.",
+    what:"A top-down view of the highway with vehicles drawn as colored rectangles (color = allocated channel, gray = non-transmitting receiver), a bar chart of transmitters per channel, and side-by-side histograms of SINR (dB) and per-link throughput (Mbps) across all allocated links.",
+    how:"Vehicle color-coding uses a 20-color qualitative colormap (<code>tab20</code>) indexed by channel number, so the same channel always renders the same color, making channel-clustering patterns visible at a glance in the highway view.",
+    role_:"These are genuine, real-data plots — generated directly from the actual greedy allocation results, unlike the Part 3 animation's illustrative numbers.",
+    why:"Channel utilization came out fairly even (12-17 transmitters per channel across 12 channels) — evidence the greedy allocator is spreading load reasonably rather than collapsing onto a few channels.",
+    fig:"staticfig", related:["greedy"],
+    kv:{ "Plots":"3 (highway snapshot, channel bar chart, SINR/throughput histograms)", "Channel utilization range":"12-17 transmitters/channel", "Colormap":"tab20 (20-color qualitative)" }
+  },
+
+  animation: {
+    ic:"🎬", name:"Animated Highway Visualization", layer:"l3", tool:"Part 3, FuncAnimation",
+    sub:"200-frame animation — visually representative, but its 'live' numbers are illustrative, not real.",
+    what:"A <code>matplotlib.animation.FuncAnimation</code> replaying the highway top-down view over 200 frames, with vehicles moving, a red dashed sweep-line marker sliding across the road, and on-screen \"Throughput\" and \"Avg SINR\" text readouts that update every frame.",
+    how:"Vehicles genuinely move each frame using the real <code>Vehicle.step()</code> mobility model, with a 5% per-frame chance of a lane change. However, <strong>every 5 frames the code explicitly replaces the channel allocation with random data</strong>: <code>channels[ch] = [(random.choice(veh_list), random.choice([\"THz\",\"mmWave\"]), (random.random()*ROAD_LENGTH, ...)) for _ in range(chansize)]</code> — the real greedy algorithm from Part 2 is never called again inside the animation loop. The on-screen throughput/SINR readouts are generated from <code>10 + 5·sin(frame/10)</code> and <code>15 + 5·cos(frame/15)</code> respectively, with the code's own comment reading <code>&quot;# fake live metrics (for illustration)&quot;</code>.",
+    role_:"Visually demonstrates what a live monitoring dashboard for this kind of system might look like — vehicle positions and the sweep-line sweep are real — but should not be read as a live re-execution of the real sweep-line + greedy algorithm, and the numeric readouts should not be cited as simulation results.",
+    why:"Documented explicitly and prominently (README, this page) specifically so nobody mistakes the animation's smooth sinusoidal 'metrics' for actual per-frame simulation output — the real numbers are the static Part 2 results (417.32 Mbps, 0.89 dB SINR), not anything shown during animation playback.",
+    fig:"animfig", related:["sweepline","greedy"],
+    kv:{ "Frames":"200", "Vehicle motion":"real (Vehicle.step())", "Channel reassignment":"RANDOM, every 5 frames — not the real algorithm", "Live metrics":"sin()/cos()-generated, explicitly commented 'fake ... for illustration'" }
+  },
+
+  edgeai: {
+    ic:"🌲", name:"Edge-AI Throughput Predictor", layer:"l4", tool:"Part 4, RandomForestRegressor",
+    sub:"R²=0.999 on held-out data — a result to read carefully, not take at face value.",
+    what:"A <code>RandomForestRegressor</code> (120 trees) trained on the Part 2 allocation results to predict per-link throughput from three features: log-transformed distance, a binary THz/mmWave band indicator, and SINR in dB.",
+    how:"Trained on a 75/25 split of the 183 allocated links (~137 train / ~46 test). Achieved MSE=0.011 Mbps² and R²=0.999 on the test split — then used to predict throughput for 10 newly-generated random link scenarios.",
+    role_:"Framed as an 'Edge-AI predictive allocation' step — the idea being that a real deployed system could use a fast trained model to estimate link quality for new vehicles without re-running the full physics-based SINR calculation each time.",
+    why:"The R²=0.999 is very likely a sign of near-total feature leakage rather than genuine predictive skill: <code>throughput_mbps</code> is itself computed directly from <code>sinr_db</code> via the Shannon capacity formula (<code>BANDWIDTH·log2(1+sinr)</code>) earlier in Part 2 — so the model is essentially learning to invert a deterministic formula it has one of the exact inputs to, on a small (183-row) dataset, rather than predicting a genuinely independent real-world outcome. This is called out explicitly rather than presented as a strong ML result.",
+    fig:"edgefig", related:["greedy"],
+    kv:{ "Model":"RandomForestRegressor, 120 trees", "Train/test":"~137 / ~46 links", "R²":"0.999 (likely feature leakage — see Known limitations)", "MSE":"0.011 Mbps²" }
+  },
+  fairness: {
+    ic:"⚖️", name:"Network Summary Metrics", layer:"l4", tool:"Part 4, final summary",
+    sub:"Jain's Fairness Index (0.400) and estimated latency (438.51ms) — real findings from real data.",
+    what:"Two network-level summary statistics computed over all 183 allocated links: Jain's Fairness Index (a standard 0-1 measure of how evenly throughput is distributed across links) and an estimated average latency derived as <code>1000 / average_throughput</code>.",
+    how:"Jain's Fairness Index formula: <code>(Σx)² / (n · Σx²)</code> — equals 1.0 only when every link gets identical throughput, and approaches <code>1/n</code> as throughput concentrates on fewer links. The recorded value of 0.400 across 183 links indicates a meaningfully uneven throughput distribution — some links are getting substantially more bandwidth than others.",
+    role_:"These are computed directly from the real Part 2 allocation results (unlike Part 3's animation numbers) — genuine, if unflattering, findings about the greedy algorithm's fairness behavior.",
+    why:"A fairness index of 0.400 is a real, worth-reporting result: it shows the greedy 'maximize this link's SINR first' policy, while good for total throughput, does not by itself guarantee even resource distribution across all vehicles — a legitimate trade-off finding rather than something to smooth over.",
+    fig:"fairfig", related:["greedy","edgeai"],
+    kv:{ "Jain's Fairness Index":"0.400 (1.0 = perfectly fair)", "Est. avg latency":"438.51 ms", "Computed from":"real Part 2 allocation data (183 links)" }
+  },
+};
+
+function lcRaw(id){ const map = { l1:'oxygen', l2:'cool', l3:'warn', l4:'purple' }; return `var(--${map[id]})`; }
+function lbgRaw(id){ const map = { l1:'oxygen-bg', l2:'cool-bg', l3:'warn-bg', l4:'purple-bg' }; return `var(--${map[id]})`; }
+
+function buildLegend(){
+  document.getElementById("legend").innerHTML = LAYERS.map(l =>
+    `<span class="li"><span class="sw" style="background:${lcRaw(l.id)}"></span>${l.tag} · ${l.name}</span>`).join("");
+}
+function buildMap(){
+  const host = document.getElementById("layers");
+  host.innerHTML = LAYERS.map(l => {
+    const cards = l.comps.map(id => {
+      const c = C[id];
+      return `<button class="comp" style="--lc:${lcRaw(l.id)}" onclick="openDetail('${id}')" aria-label="${c.name}">
+        <span class="ic">${c.ic}</span>
+        <span class="cn">${c.name}</span>
+        <span class="ct">${c.sub}</span>
+        <span class="tool">${c.tool}</span>
+      </button>`;
+    }).join("");
+    return `<div class="layer" style="--lbg:${lbgRaw(l.id)}">
+      <div class="layer-head" style="--lbg:${lbgRaw(l.id)}">
+        <span class="layer-tag" style="--lc:${lcRaw(l.id)}">${l.tag}</span>
+        <span class="layer-name">${l.name}</span>
+        <span class="layer-role">${l.role}</span>
+      </div>
+      <div class="comp-grid">${cards}</div>
+    </div>`;
+  }).join("");
+}
+
+function openDetail(id){
+  const c = C[id];
+  const layer = LAYERS.find(l => l.id === c.layer);
+  const lc = lcRaw(layer.id), lbg = lbgRaw(layer.id);
+  document.getElementById("crumbs").innerHTML = `<b>${c.name}</b> — ${layer.name}`;
+  const related = (c.related||[]).map(rid => `<button class="chip" onclick="openDetail('${rid}')">${C[rid].ic} ${C[rid].name}</button>`).join("");
+  const kv = Object.entries(c.kv||{}).map(([k,v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+  document.getElementById("detailView").innerHTML = `
+    <button class="back" onclick="showMap()">← Back to system map</button>
+    <div class="dhead">
+      <div class="dic" style="--lbg:${lbg};--lc:${lc}">${c.ic}</div>
+      <div>
+        <h2>${c.name}</h2>
+        <div class="dsub">${c.sub}</div>
+        <span class="dtool" style="--lc:${lc}">${c.tool}</span>
+      </div>
+    </div>
+    <div class="dcols">
+      <div>
+        <div class="card" style="--lc:${lc}"><h3>What it is</h3><p>${c.what}</p></div>
+        <div class="card" style="--lc:${lc}"><h3>How it works</h3><p>${c.how}</p></div>
+        <div class="card" style="--lc:${lc}"><h3>Role in the pipeline</h3><p>${c.role_}</p></div>
+        <div class="card" style="--lc:${lc}"><h3>Worth noting</h3><p class="q">${c.why}</p></div>
+      </div>
+      <div>
+        <div class="figure">
+          <div class="ftitle">Key facts</div>
+          <dl class="kv">${kv}</dl>
+          <div class="fnote">Related components below.</div>
+          <div class="related">${related}</div>
+        </div>
+      </div>
+    </div>`;
+  document.getElementById("mapView").classList.add("hidden");
+  document.getElementById("detailView").classList.add("active");
+  window.scrollTo({top:0, behavior:"smooth"});
+}
+function showMap(){
+  document.getElementById("mapView").classList.remove("hidden");
+  document.getElementById("detailView").classList.remove("active");
+  document.getElementById("crumbs").innerHTML = "<b>System map</b> — click any component";
+  window.scrollTo({top:0, behavior:"smooth"});
+}
+
+function switchTab(tab){
+  document.querySelectorAll(".navtab").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
+  document.querySelectorAll(".tabpage").forEach(p => p.classList.remove("active"));
+  document.getElementById("tab-"+tab).classList.add("active");
+  if (tab === "dataset" && !document.getElementById("tab-dataset").dataset.built) buildDataset();
+  if (tab === "metrics" && !document.getElementById("tab-metrics").dataset.built) buildMetrics();
+  if (tab === "dataflow" && !document.getElementById("tab-dataflow").dataset.built) buildDataflow();
+  if (tab === "glossary" && !document.getElementById("tab-glossary").dataset.built) buildGlossary();
+}
+
+function buildDataset(){
+  const el = document.getElementById("tab-dataset");
+  el.dataset.built = "1";
+  el.innerHTML = `
+  <div class="ds-section">
+    <h2>Dataset &amp; Key Decisions</h2>
+    <div class="subtitle">How this project relates to the paper it's named after, and to its own submitted report.</div>
+
+    <h3>Relationship to Mande &amp; Ramachandran (2025)</h3>
+    <p style="font-size:14.5px;">This project's naming and general framing — "greedy algorithm + sweep line model" for 6G V2V resource allocation — is adapted from a real published paper: Mande, S. &amp; Ramachandran, N., <em>"A novel approach for efficient resource allocation in 6G V2V networks using neighbor-aware greedy algorithm and sweep line model,"</em> Egyptian Informatics Journal, 2025. <code>_source_docs/Paper_Review_Slides.pptx</code> is an explicit slide-by-slide review of that paper's method (called "NNAGbRD-V2V-SLM" in the original), formulas, and NS3/SUMO-based simulation setup (200×200m area, 20 vehicles, TCP/AODV). The actual notebook code in this repo is this project's own from-scratch implementation with its own parameters (mmWave/THz bands, 40 vehicles, 3 lanes, 12 channels) — not a reproduction of that paper's simulation.</p>
+
+    <h3>The submitted report describes a different simulation than the code</h3>
+    <div class="callout bug"><b>Discrepancy</b> <code>_source_docs/Submission_Report.pdf</code> claims a simulation with 100-300 vehicles, a 2-lane road, and 10 channels — the actual notebook uses 40 vehicles, 3 lanes, and 12 channels. The report's results table (spectrum utilization 78%→94%, throughput 8.2→11.5 Mbps, latency 4.3→2.6 ms, "Random vs. Proposed") does not correspond to any output this notebook produces, and the report never mentions the mmWave/THz band modeling or the Edge-AI predictor that make up a substantial part of the actual code (Parts 1 and 4).</div>
+    <div class="callout decision"><b>What this repo documents</b> This architecture explorer and the README describe only what <code>notebooks/v2v_sweepline_simulation.ipynb</code> actually implements and actually produced on its recorded run: 132 potential pairs, 183 allocated links, 417.32 Mbps total throughput, 0.89 dB average SINR, R²=0.999 on the Edge-AI model (flagged as likely feature leakage), and a Jain's Fairness Index of 0.400. The original submitted report and slides are preserved in <code>_source_docs/</code> for reference.</div>
+
+    <h3>A genuine in-notebook bug-fix, kept visible</h3>
+    <p style="font-size:14.5px;"><code>select_best_band()</code> is defined twice across the notebook — once in Part 1 using a simpler watts-domain ratio, and again in Part 2 with a comment explicitly reading "Override / correct select_best_band to use dB properly." This is a real, visible correction made mid-development, kept as two definitions in the notebook rather than only showing the final version — an honest trace of the debugging process.</p>
+
+    <h3>Simulation parameters actually used (this repo's code)</h3>
+    <table>
+      <tr><th>Parameter</th><th>Value</th></tr>
+      <tr><td>Vehicles</td><td>40</td></tr>
+      <tr><td>Lanes</td><td>3</td></tr>
+      <tr><td>Road length</td><td>2000 m</td></tr>
+      <tr><td>Channels</td><td>12</td></tr>
+      <tr><td>Communication range (d_max)</td><td>250 m</td></tr>
+      <tr><td>Frequency bands</td><td>mmWave (60 GHz), THz (140 GHz)</td></tr>
+      <tr><td>Tx power</td><td>23 dBm</td></tr>
+      <tr><td>Noise floor</td><td>-174 dBm/Hz</td></tr>
+    </table>
+  </div>`;
+}
+
+function buildMetrics(){
+  const el = document.getElementById("tab-metrics");
+  el.dataset.built = "1";
+  el.innerHTML = `
+  <div class="ds-section">
+    <h2>Metrics &amp; Results</h2>
+    <div class="subtitle">Real output from the notebook's recorded run — not the submitted report's separate claimed numbers.</div>
+
+    <h3>Core simulation results (Part 2)</h3>
+    <table>
+      <tr><th>Metric</th><th>Value</th></tr>
+      <tr><td>Potential V2V pairs found (sweep-line)</td><td>132</td></tr>
+      <tr><td>Allocated links (greedy)</td><td>183</td></tr>
+      <tr><td>Total system throughput</td><td>417.32 Mbps</td></tr>
+      <tr><td>Average SINR</td><td>0.89 dB</td></tr>
+      <tr><td>Channel utilization range</td><td>12-17 transmitters per channel (of 12 channels)</td></tr>
+    </table>
+
+    <h3>Edge-AI model (Part 4)</h3>
+    <table>
+      <tr><th>Metric</th><th>Value</th><th>Caveat</th></tr>
+      <tr class="bugrow"><td>R² (test set)</td><td>0.999</td><td>Very likely feature leakage — throughput is a deterministic function of one input feature (SINR)</td></tr>
+      <tr><td>MSE (test set)</td><td>0.011 Mbps²</td><td>Same caveat applies</td></tr>
+      <tr><td>Train / test split</td><td>~137 / ~46 links</td><td>Small dataset, single random split, no cross-validation</td></tr>
+    </table>
+
+    <h3>Network-level summary (Part 4)</h3>
+    <table>
+      <tr><th>Metric</th><th>Value</th></tr>
+      <tr><td>Jain's Fairness Index</td><td>0.400 (1.0 = perfectly fair)</td></tr>
+      <tr><td>Estimated average latency</td><td>438.51 ms</td></tr>
+      <tr><td>Average throughput</td><td>2.28 Mbps (per-link average, distinct from total system throughput above)</td></tr>
+    </table>
+    <p style="font-size:13px;color:var(--muted);">Note: "Total system throughput" (417.32 Mbps, Part 2) sums across all allocated links; "Average throughput" (2.28 Mbps, Part 4) is the mean per-link value used as the denominator for the latency estimate — both are real, just answering different questions.</p>
+  </div>`;
+}
+
+function buildDataflow(){
+  const el = document.getElementById("tab-dataflow");
+  el.dataset.built = "1";
+  const stages = [
+    {n:1, c:"oxygen", t:"Set global parameters", d:"40 vehicles, 3 lanes, 2000m road, 12 channels, 250m range, mmWave/THz frequency constants."},
+    {n:2, c:"oxygen", t:"Define path-loss + band selection", d:"3GPP-style mmWave model, THz spreading+absorption model, select_best_band() picks the stronger option per link."},
+    {n:3, c:"cool", t:"Generate & advance vehicles", d:"40 Vehicle objects seeded reproducibly, advanced 5 timesteps so starting positions are naturally spread."},
+    {n:4, c:"cool", t:"Sweep-line link discovery", d:"Sort by position, sweep with an active window, find all pairs within 250m → 132 potential pairs."},
+    {n:5, c:"cool", t:"Greedy SINR channel allocation", d:"Rank links by estimated rate, assign each to the channel giving highest SINR given existing interference → 183 allocated links."},
+    {n:6, c:"cool", t:"Static diagnostic plots", d:"Top-down highway view, channel utilization bar chart, SINR/throughput histograms — all from real allocation data."},
+    {n:7, c:"warn", t:"Animated visualization", d:"200-frame animation: real vehicle motion, but channel reassignment every 5 frames is RANDOM and on-screen metrics are sin/cos-generated illustration, not real."},
+    {n:8, c:"purple", t:"Edge-AI throughput prediction", d:"RandomForestRegressor trained on the 183 real allocated links → R²=0.999 (likely feature leakage, see Known limitations)."},
+    {n:9, c:"purple", t:"Network summary metrics", d:"Jain's Fairness Index (0.400) and estimated latency (438.51ms) computed from the real Part 2 results."},
+  ];
+  el.innerHTML = `<div class="ds-section">
+    <h2>Data Flow</h2>
+    <div class="subtitle">One pass through the notebook, from parameters to final summary metrics.</div>
+    <div class="dfd-flow">
+      ${stages.map((s,i) => `
+        <div class="dfd-stage" style="--sc:var(--${s.c})">
+          <div class="dfd-num" style="background:var(--${s.c})">${s.n}</div>
+          <div class="dfd-body"><h4>${s.t}</h4><p>${s.d}</p></div>
+        </div>
+        ${i < stages.length-1 ? '<div class="dfd-arrow">↓</div>' : ''}
+      `).join("")}
+    </div>
+  </div>`;
+}
+
+function buildGlossary(){
+  const el = document.getElementById("tab-glossary");
+  el.dataset.built = "1";
+  const terms = [
+    {t:"V2V (Vehicle-to-Vehicle)", cat:"domain", d:"Direct wireless communication between vehicles, without routing through cellular infrastructure — used for safety alerts, platooning, and cooperative driving."},
+    {t:"Sweep-line algorithm", cat:"algorithm", d:"A computational-geometry technique that processes spatially-sorted events left-to-right while maintaining an 'active set,' avoiding all-pairs comparisons. Common in computational geometry (e.g. finding line segment intersections); applied here to proximity-based link discovery."},
+    {t:"SINR", cat:"radio", d:"Signal-to-Interference-plus-Noise Ratio — the ratio of a wanted signal's power to the combined power of interference from other transmitters plus background noise. Higher SINR means a cleaner, higher-capacity link."},
+    {t:"mmWave", cat:"radio", d:"Millimeter Wave — radio frequencies roughly 30-300 GHz (60 GHz used here), offering high bandwidth but shorter range and worse penetration than lower frequencies."},
+    {t:"THz (Terahertz)", cat:"radio", d:"An even higher frequency band (100 GHz-10 THz, 140 GHz used here) proposed for future 6G networks — very high potential bandwidth, but severe path loss and atmospheric absorption limit range."},
+    {t:"Greedy algorithm", cat:"algorithm", d:"An algorithm that makes the locally-best choice at each step (here: assign each link, in order of estimated rate, to whichever channel currently looks best) without backtracking — fast, but not guaranteed to find the global optimum."},
+    {t:"Jain's Fairness Index", cat:"metric", d:"A standard 0-1 measure of how evenly a resource (here, throughput) is distributed across users/links. 1.0 means perfectly equal distribution; lower values indicate some links get disproportionately more than others."},
+    {t:"Shannon capacity", cat:"formula", d:"C = B·log2(1+SINR) — the theoretical maximum data rate of a channel given its bandwidth (B) and SINR, used here to convert a computed SINR into an estimated throughput in Mbps."},
+    {t:"Feature leakage", cat:"pitfall", d:"When a model's input features contain information that deterministically or near-deterministically implies the target it's predicting, inflating apparent accuracy without genuine predictive skill — the likely explanation for this project's R²=0.999 Edge-AI result."},
+    {t:"6G", cat:"domain", d:"The proposed sixth generation of cellular network technology, expected to explore mmWave and THz bands, ultra-low latency, and dense V2V/IoT connectivity beyond current 5G capabilities."},
+  ];
+  el.innerHTML = `<div class="ds-section">
+    <h2>Glossary</h2>
+    <div class="subtitle">Terms used throughout this architecture explorer.</div>
+    <input class="glossary-search" id="gsearch" placeholder="Search terms..." oninput="filterGlossary()" />
+    <div class="gloss-grid" id="gloss-grid">
+      ${terms.map(t => `<div class="gloss-card" data-term="${t.t.toLowerCase()}"><h4>${t.t} <span class="cat">${t.cat}</span></h4><p>${t.d}</p></div>`).join("")}
+    </div>
+  </div>`;
+}
+function filterGlossary(){
+  const q = document.getElementById("gsearch").value.toLowerCase();
+  document.querySelectorAll("#gloss-grid .gloss-card").forEach(card => {
+    card.style.display = card.textContent.toLowerCase().includes(q) ? "" : "none";
+  });
+}
+
+function toggleTheme(){
+  const root = document.documentElement;
+  const current = root.getAttribute("data-theme");
+  if (current === "dark") root.setAttribute("data-theme", "light");
+  else if (current === "light") root.removeAttribute("data-theme");
+  else root.setAttribute("data-theme", "dark");
+}
+
+buildLegend();
+buildMap();
+</script>
+</body>
+</html>
