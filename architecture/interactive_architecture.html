@@ -175,7 +175,7 @@
       visualization whose "live" numbers are honestly illustrative, not a live re-run of the
       real algorithm. Every box below is clickable.</p>
     <div class="hint"><span class="dot"></span> Tap a component to open a full explainer.</div>
-    <div class="disclaimer">⚠ Computer Networks coursework simulation (VIT Vellore). Adapts its naming/approach from a real published paper (Mande &amp; Ramachandran, 2025) — see the Dataset &amp; Decisions tab for how this repo's code relates to both that paper and the submitted report.</div>
+    <div class="disclaimer">⚠ Computer Networks coursework simulation (VIT Vellore). Adapts its naming/approach from a real published paper (Mande &amp; Ramachandran, 2025) — see the Dataset &amp; Decisions tab. Part 3's fake animation data and Part 4's leaky Edge-AI model are left unmodified with a warning comment, and fixed in new Part 3B / Part 4B cells, both verified by execution.</div>
   </div>
 
   <div class="navtabs" id="navtabs">
@@ -207,8 +207,8 @@
 const LAYERS = [
   { id:"l1", tag:"L1", name:"Setup", role:"Parameters, path-loss models, band selection", comps:["params","pathloss","bandsel"] },
   { id:"l2", tag:"L2", name:"Core Simulation", role:"Mobility, sweep-line, greedy SINR allocation", comps:["vehicles","sweepline","greedy","staticplots"] },
-  { id:"l3", tag:"L3", name:"Animation", role:"Visualization — illustrative, not a live re-run", comps:["animation"] },
-  { id:"l4", tag:"L4", name:"Edge-AI", role:"Throughput prediction + network summary metrics", comps:["edgeai","fairness"] },
+  { id:"l3", tag:"L3", name:"Animation", role:"Visualization — Part 3 illustrative-only, fixed in Part 3B", comps:["animation","animfix"] },
+  { id:"l4", tag:"L4", name:"Edge-AI", role:"Throughput prediction (leaky) + fix + network summary metrics", comps:["edgeai","edgeaifix","fairness"] },
 ];
 
 const C = {
@@ -286,24 +286,44 @@ const C = {
 
   animation: {
     ic:"🎬", name:"Animated Highway Visualization", layer:"l3", tool:"Part 3, FuncAnimation",
-    sub:"200-frame animation — visually representative, but its 'live' numbers are illustrative, not real.",
+    sub:"200-frame animation — visually representative, but its 'live' numbers are illustrative, not real. Fixed in Part 3B.",
     what:"A <code>matplotlib.animation.FuncAnimation</code> replaying the highway top-down view over 200 frames, with vehicles moving, a red dashed sweep-line marker sliding across the road, and on-screen \"Throughput\" and \"Avg SINR\" text readouts that update every frame.",
     how:"Vehicles genuinely move each frame using the real <code>Vehicle.step()</code> mobility model, with a 5% per-frame chance of a lane change. However, <strong>every 5 frames the code explicitly replaces the channel allocation with random data</strong>: <code>channels[ch] = [(random.choice(veh_list), random.choice([\"THz\",\"mmWave\"]), (random.random()*ROAD_LENGTH, ...)) for _ in range(chansize)]</code> — the real greedy algorithm from Part 2 is never called again inside the animation loop. The on-screen throughput/SINR readouts are generated from <code>10 + 5·sin(frame/10)</code> and <code>15 + 5·cos(frame/15)</code> respectively, with the code's own comment reading <code>&quot;# fake live metrics (for illustration)&quot;</code>.",
-    role_:"Visually demonstrates what a live monitoring dashboard for this kind of system might look like — vehicle positions and the sweep-line sweep are real — but should not be read as a live re-execution of the real sweep-line + greedy algorithm, and the numeric readouts should not be cited as simulation results.",
-    why:"Documented explicitly and prominently (README, this page) specifically so nobody mistakes the animation's smooth sinusoidal 'metrics' for actual per-frame simulation output — the real numbers are the static Part 2 results (417.32 Mbps, 0.89 dB SINR), not anything shown during animation playback.",
-    fig:"animfig", related:["sweepline","greedy"],
-    kv:{ "Frames":"200", "Vehicle motion":"real (Vehicle.step())", "Channel reassignment":"RANDOM, every 5 frames — not the real algorithm", "Live metrics":"sin()/cos()-generated, explicitly commented 'fake ... for illustration'" }
+    role_:"This cell is left completely unmodified from the original submission (only a short warning comment was added at the top, no logic changed) — visually demonstrates what a live monitoring dashboard might look like, but should not be read as a live re-execution of the real algorithm.",
+    why:"<strong>Fixed in Part 3B</strong> (a new cell immediately below, in the notebook): re-runs the exact same <code>sweep_line_find_links()</code> + greedy SINR allocation logic from Part 2 every 5 frames, so both the vehicle colors and the on-screen metrics reflect the real algorithm's live output. Verified by actually executing the full notebook end-to-end — Part 3B runs without errors and produces a genuine animated allocation.",
+    fig:"animfig", related:["sweepline","greedy","animfix"],
+    kv:{ "Frames":"200", "Vehicle motion":"real (Vehicle.step())", "Channel reassignment":"RANDOM, every 5 frames — not the real algorithm", "Live metrics":"sin()/cos()-generated, explicitly commented 'fake ... for illustration'", "Fix":"see Part 3B below it in the notebook" }
+  },
+  animfix: {
+    ic:"✅", name:"Part 3B — Real Animation Fix", layer:"l3", tool:"Part 3B, new cell",
+    sub:"Same animation, but re-runs the real sweep-line + greedy algorithm every 5 frames.",
+    what:"A new cell inserted directly after Part 3 (with a markdown header explaining what it fixes) that reproduces the same visual animation, but replaces the random channel-reassignment block with a call to <code>run_real_allocation()</code> — a function that runs the exact same sweep-line link discovery and greedy SINR channel assignment as Part 2, then also computes real total throughput and average SINR from the resulting allocation.",
+    how:"<code>run_real_allocation()</code> is a faithful extraction of Part 2's main allocation loop (sweep-line → build directed links → estimate rates → greedy channel assignment → per-link SINR/throughput), factored out so it can be called repeatedly instead of copy-pasted or replaced with randomness. Called every 5 frames — the same cadence Part 3 used for its fake reassignment — so the two are directly comparable.",
+    role_:"Both the vehicle colors (by allocated channel) and the on-screen Throughput/SINR text now reflect what the real algorithm actually computed for that frame's vehicle positions, not a placeholder.",
+    why:"Verified by execution: this cell runs successfully end-to-end (no errors) as part of the full notebook re-run performed for this repo, producing a real animated visualization of the sweep-line + greedy algorithm responding to vehicle movement over time.",
+    fig:"animfixfig", related:["animation","sweepline","greedy"],
+    kv:{ "Location":"new cell, directly after Part 3", "Reuses":"sweep_line_find_links(), estimate_link_rate(), select_best_band() from Parts 1-2", "Verified":"executed successfully, zero errors" }
   },
 
   edgeai: {
     ic:"🌲", name:"Edge-AI Throughput Predictor", layer:"l4", tool:"Part 4, RandomForestRegressor",
-    sub:"R²=0.999 on held-out data — a result to read carefully, not take at face value.",
+    sub:"R²=0.999 on held-out data — inflated by feature leakage. Fixed in Part 4B.",
     what:"A <code>RandomForestRegressor</code> (120 trees) trained on the Part 2 allocation results to predict per-link throughput from three features: log-transformed distance, a binary THz/mmWave band indicator, and SINR in dB.",
     how:"Trained on a 75/25 split of the 183 allocated links (~137 train / ~46 test). Achieved MSE=0.011 Mbps² and R²=0.999 on the test split — then used to predict throughput for 10 newly-generated random link scenarios.",
-    role_:"Framed as an 'Edge-AI predictive allocation' step — the idea being that a real deployed system could use a fast trained model to estimate link quality for new vehicles without re-running the full physics-based SINR calculation each time.",
-    why:"The R²=0.999 is very likely a sign of near-total feature leakage rather than genuine predictive skill: <code>throughput_mbps</code> is itself computed directly from <code>sinr_db</code> via the Shannon capacity formula (<code>BANDWIDTH·log2(1+sinr)</code>) earlier in Part 2 — so the model is essentially learning to invert a deterministic formula it has one of the exact inputs to, on a small (183-row) dataset, rather than predicting a genuinely independent real-world outcome. This is called out explicitly rather than presented as a strong ML result.",
-    fig:"edgefig", related:["greedy"],
-    kv:{ "Model":"RandomForestRegressor, 120 trees", "Train/test":"~137 / ~46 links", "R²":"0.999 (likely feature leakage — see Known limitations)", "MSE":"0.011 Mbps²" }
+    role_:"This cell is left completely unmodified from the original submission (only a short warning comment was added at the top, no logic changed) — framed as an 'Edge-AI predictive allocation' step.",
+    why:"The R²=0.999 is a sign of near-total feature leakage rather than genuine predictive skill: <code>throughput_mbps</code> is itself computed directly from <code>sinr_db</code> via the Shannon capacity formula (<code>BANDWIDTH·log2(1+sinr)</code>) earlier in Part 2 — so the model has near-direct access to one of the exact inputs to the formula that produces its own target. <strong>Fixed in Part 4B</strong> (a new cell immediately below, in the notebook): trains a new Random Forest predicting <code>sinr_db</code> itself from geometry alone (distance, band) — features that don't deterministically imply the target — and gets a genuinely earned R²=0.744 (verified by execution). The 0.999-vs-0.744 gap is a measured illustration of the leakage effect, not a guess.",
+    fig:"edgefig", related:["greedy","edgeaifix"],
+    kv:{ "Model":"RandomForestRegressor, 120 trees", "Train/test":"~137 / ~46 links", "R²":"0.999 (feature leakage — see Part 4B)", "MSE":"0.011 Mbps²", "Fix":"see Part 4B below it in the notebook" }
+  },
+  edgeaifix: {
+    ic:"✅", name:"Part 4B — Leakage-Free Edge-AI", layer:"l4", tool:"Part 4B, new cell",
+    sub:"Predicts SINR from raw geometry alone — R²=0.744, a genuine result.",
+    what:"A new cell inserted directly after Part 4 (with a markdown header explaining what it fixes) that trains a second <code>RandomForestRegressor</code> — same hyperparameters (120 trees) — but predicting <code>sinr_db</code> from only <code>log_distance</code> and <code>band_encoded</code>, deliberately excluding any feature that's a deterministic function of the target.",
+    how:"Same 75/25 train/test split methodology as Part 4's original model, applied to the same underlying 183 allocated links. Result: MSE=58.4 dB², R²=0.744 — verified by actually executing this cell as part of a full notebook re-run.",
+    role_:"A fair test of whether the model has learned anything real about the path-loss/interference relationship, since distance and band alone don't determine SINR (interference from other links sharing the same channel isn't visible from geometry alone) — a harder, more honest prediction task than Part 4's original setup.",
+    why:"0.744 is explicitly the EXPECTED result here, not a disappointment — a lower, more modest R² on a genuinely harder task is exactly what should happen when feature leakage is removed. The gap between this and Part 4's 0.999 is direct evidence of how large the leakage effect was.",
+    fig:"edgeaifixfig", related:["edgeai"],
+    kv:{ "Model":"RandomForestRegressor, 120 trees (same as Part 4)", "Features":"log_distance, band_encoded only (no sinr_db)", "R²":"0.744 (verified by execution)", "MSE":"58.4 dB²" }
   },
   fairness: {
     ic:"⚖️", name:"Network Summary Metrics", layer:"l4", tool:"Part 4, final summary",
@@ -419,6 +439,9 @@ function buildDataset(){
     <h3>A genuine in-notebook bug-fix, kept visible</h3>
     <p style="font-size:14.5px;"><code>select_best_band()</code> is defined twice across the notebook — once in Part 1 using a simpler watts-domain ratio, and again in Part 2 with a comment explicitly reading "Override / correct select_best_band to use dB properly." This is a real, visible correction made mid-development, kept as two definitions in the notebook rather than only showing the final version — an honest trace of the debugging process.</p>
 
+    <h3>Two fixes applied to this notebook, following the same pattern</h3>
+    <p style="font-size:14.5px;">Part 3's random-data animation and Part 4's leaky Edge-AI model are both real design flaws, not simple typos — fixing them means adding new, different code, not editing one line. Rather than silently rewriting Part 3 and Part 4 (which would erase what was actually originally submitted), this repo leaves both cells completely unmodified except for a short warning comment at the top of each, and adds the fix as a new cell (Part 3B, Part 4B) directly below. Both new cells were verified by actually executing the full notebook end-to-end — see the Metrics tab for their real, measured output.</p>
+
     <h3>Simulation parameters actually used (this repo's code)</h3>
     <table>
       <tr><th>Parameter</th><th>Value</th></tr>
@@ -452,13 +475,15 @@ function buildMetrics(){
       <tr><td>Channel utilization range</td><td>12-17 transmitters per channel (of 12 channels)</td></tr>
     </table>
 
-    <h3>Edge-AI model (Part 4)</h3>
+    <h3>Edge-AI model (Part 4, original) vs. leakage-free fix (Part 4B)</h3>
     <table>
-      <tr><th>Metric</th><th>Value</th><th>Caveat</th></tr>
-      <tr class="bugrow"><td>R² (test set)</td><td>0.999</td><td>Very likely feature leakage — throughput is a deterministic function of one input feature (SINR)</td></tr>
-      <tr><td>MSE (test set)</td><td>0.011 Mbps²</td><td>Same caveat applies</td></tr>
-      <tr><td>Train / test split</td><td>~137 / ~46 links</td><td>Small dataset, single random split, no cross-validation</td></tr>
+      <tr><th>Metric</th><th>Part 4 (original)</th><th>Part 4B (fixed)</th></tr>
+      <tr class="bugrow"><td>Target / features</td><td>throughput_mbps from [distance, band, <strong>sinr_db</strong>]</td><td>sinr_db from [distance, band] only</td></tr>
+      <tr class="bugrow"><td>R² (test set)</td><td>0.999 — feature leakage</td><td class="fixrow">0.744 — genuine, verified by execution</td></tr>
+      <tr><td>MSE (test set)</td><td>0.011 Mbps²</td><td>58.4 dB²</td></tr>
+      <tr><td>Train / test split</td><td>~137 / ~46 links</td><td>~137 / ~46 links (same split methodology)</td></tr>
     </table>
+    <p style="font-size:13px;color:var(--muted);">Both cells use the same RandomForestRegressor(n_estimators=120) hyperparameters — the only difference is which features are given to the model. The 0.999→0.744 gap is a direct, measured illustration of how much of the original score was leakage.</p>
 
     <h3>Network-level summary (Part 4)</h3>
     <table>
@@ -481,9 +506,11 @@ function buildDataflow(){
     {n:4, c:"cool", t:"Sweep-line link discovery", d:"Sort by position, sweep with an active window, find all pairs within 250m → 132 potential pairs."},
     {n:5, c:"cool", t:"Greedy SINR channel allocation", d:"Rank links by estimated rate, assign each to the channel giving highest SINR given existing interference → 183 allocated links."},
     {n:6, c:"cool", t:"Static diagnostic plots", d:"Top-down highway view, channel utilization bar chart, SINR/throughput histograms — all from real allocation data."},
-    {n:7, c:"warn", t:"Animated visualization", d:"200-frame animation: real vehicle motion, but channel reassignment every 5 frames is RANDOM and on-screen metrics are sin/cos-generated illustration, not real."},
-    {n:8, c:"purple", t:"Edge-AI throughput prediction", d:"RandomForestRegressor trained on the 183 real allocated links → R²=0.999 (likely feature leakage, see Known limitations)."},
-    {n:9, c:"purple", t:"Network summary metrics", d:"Jain's Fairness Index (0.400) and estimated latency (438.51ms) computed from the real Part 2 results."},
+    {n:7, c:"warn", t:"Part 3: Animated visualization (unmodified, illustrative)", d:"200-frame animation: real vehicle motion, but channel reassignment every 5 frames is RANDOM and on-screen metrics are sin/cos-generated illustration, not real."},
+    {n:8, c:"oxygen", t:"Part 3B: Real animation (fix, new cell)", d:"Same animation, but re-runs the real sweep-line + greedy allocator every 5 frames — verified by execution, produces genuine live metrics."},
+    {n:9, c:"warn", t:"Part 4: Edge-AI throughput prediction (unmodified, leaky)", d:"RandomForestRegressor trained on the 183 real allocated links → R²=0.999 (feature leakage — sinr_db is both a feature and a determinant of the target)."},
+    {n:10, c:"oxygen", t:"Part 4B: Leakage-free Edge-AI (fix, new cell)", d:"Same model type, predicting sinr_db from distance+band only → R²=0.744, verified by execution — the honest, leakage-free result."},
+    {n:11, c:"purple", t:"Network summary metrics", d:"Jain's Fairness Index (0.400) and estimated latency (438.51ms) computed from the real Part 2 results."},
   ];
   el.innerHTML = `<div class="ds-section">
     <h2>Data Flow</h2>

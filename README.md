@@ -25,8 +25,8 @@ this project's own implementation, not a reproduction of that paper's NS3/SUMO s
 |---|---|
 | **Part 1 — Setup** | Global simulation parameters (40 vehicles, 3 lanes, 2000m road, 12 channels), path-loss models for mmWave and THz bands, adaptive band selection by SNR |
 | **Part 2 — Core simulation** | Vehicle mobility model, a **sweep-line algorithm** to efficiently find all vehicle pairs within 250m communication range, a **greedy SINR-maximizing channel allocator** across 12 channels, static plots (top-down highway snapshot, channel utilization, SINR/throughput histograms) |
-| **Part 3 — Animation** | A `matplotlib.animation.FuncAnimation` top-down highway visualization — see [Known limitations](#known-limitations), this part does **not** re-run the real algorithm per frame |
-| **Part 4 — Edge-AI prediction** | A `RandomForestRegressor` trained on the Part 2 allocation results to predict per-link throughput from distance/band/SINR, plus Jain's Fairness Index and estimated latency as network-level summary metrics |
+| **Part 3 — Animation** | A `matplotlib.animation.FuncAnimation` top-down highway visualization — this part does **not** re-run the real algorithm per frame (see [Known limitations](#known-limitations)); left unmodified with a warning comment, with a corrected version in **Part 3B** immediately below it |
+| **Part 4 — Edge-AI prediction** | A `RandomForestRegressor` trained on the Part 2 allocation results to predict per-link throughput from distance/band/SINR, plus Jain's Fairness Index and estimated latency as network-level summary metrics — its R²=0.999 reflects feature leakage (see [Known limitations](#known-limitations)); left unmodified with a warning comment, with a leakage-free version in **Part 4B** immediately below it |
 
 Open `architecture/interactive_architecture.html` in any browser for a full component-by-
 component breakdown, including the honest data-flow story of what's real simulation vs.
@@ -85,22 +85,28 @@ model) — not the report's separate claimed figures.
 
 ## Known limitations
 
-- **The Part 3 animation does not run the real algorithm.** Its per-frame `update()` function
-  explicitly replaces the channel allocation with **randomly generated fake assignments**
-  (`channels[ch] = [(random.choice(veh_list), random.choice(["THz","mmWave"]), ...)]`), and
-  the on-screen "live" throughput/SINR readouts are generated from `sin()`/`cos()` functions
-  with a code comment literally reading `# fake live metrics (for illustration)` — not
-  recomputed from the vehicles' real positions. The animation is visually representative of
-  what a live system might look like, but its numbers are not connected to Part 2's real
-  simulation once playback starts. This is documented here rather than silently presented as
-  a live re-run of the real allocator.
-- **The Edge-AI model's R²=0.999 is very likely overfit**, not a genuinely strong result. It's
-  trained on ~137 samples (train split of ~183 allocated links) and evaluated on a ~46-sample
-  test split, using features (`distance`, `band`, `sinr_db`) that are deterministic
-  transformations of each other via the same path-loss formulas used to generate the training
-  labels in the first place (`throughput_mbps` is itself a direct function of `sinr_db` via
-  Shannon capacity) — the model is closer to learning the closed-form relationship it was
-  generated from than predicting genuinely independent outcomes.
+- **The Part 3 animation does not run the real algorithm — fixed in Part 3B.** Its per-frame
+  `update()` function explicitly replaces the channel allocation with **randomly generated
+  fake assignments** (`channels[ch] = [(random.choice(veh_list), random.choice(["THz","mmWave"]), ...)]`),
+  and the on-screen "live" throughput/SINR readouts are generated from `sin()`/`cos()`
+  functions with a code comment literally reading `# fake live metrics (for illustration)` —
+  not recomputed from the vehicles' real positions. **Part 3, as originally submitted, is left
+  completely unmodified** (only a warning comment was added at the top, no logic changed) so
+  the notebook still shows exactly what was originally built. **Part 3B**, a new cell
+  immediately below it, re-runs the exact same `sweep_line_find_links()` + greedy SINR
+  allocation logic from Part 2 every 5 frames, so both the vehicle colors and the on-screen
+  metrics reflect the real algorithm's live output — verified by actually executing the
+  notebook end-to-end.
+- **The Edge-AI model's R²=0.999 is very likely from feature leakage — a corrected version is
+  in Part 4B.** `throughput_mbps` (Part 4's prediction target) is itself computed directly
+  from `sinr_db` via the Shannon capacity formula in Part 2, and `sinr_db` is one of the
+  original model's three input features — so the model has near-direct access to the formula
+  that produces its own target, rather than learning a genuinely independent relationship.
+  **Part 4, as originally submitted, is left unmodified** (warning comment only). **Part 4B**
+  trains a new Random Forest predicting `sinr_db` from raw geometry alone (distance, band) —
+  features that do *not* deterministically imply the target — and gets a much more modest,
+  genuinely earned **R²=0.744** (verified by execution; MSE=58.4 dB²). The gap between 0.999
+  and 0.744 is a direct, measured illustration of how much of the original score was leakage.
 - **No real-world validation.** All results come from a self-contained synthetic simulation
   (`np.random.seed(42)`) — there's no comparison against real V2V measurement data or a
   published baseline's reported numbers.
@@ -122,7 +128,10 @@ jupyter notebook notebooks/v2v_sweepline_simulation.ipynb
 
 Run all cells top to bottom — Part 1 sets up parameters, Part 2 runs the core sweep-line +
 greedy simulation (takes a few seconds for 40 vehicles × 12 channels), Part 3 renders the
-animation (may take a minute to build all 200 frames), and Part 4 trains the Edge-AI model.
+original (illustrative-only) animation, Part 3B renders the corrected animation with real
+per-frame algorithm output (both may take a minute or two to build all 200 frames), Part 4
+trains the original (leakage-affected) Edge-AI model, and Part 4B trains the corrected,
+leakage-free version.
 
 ---
 
